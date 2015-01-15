@@ -1,0 +1,358 @@
+from array import array
+
+#      input, store, output, outfb, xorrs, inpfb
+ls0  = [  11,      4,      9,     0,     0,    0]
+ls1  = [   5,      2,     13,     0,     0,    0]
+ls2  = [  17,      7,     15,     0,     0,    0]
+#testing various seeds for the initial state
+
+#ls0 = [ 27817, 48761, 17231,     0,     0,    0]
+#ls1 = [ 48799, 28631, 37619,     0,     0,    0]
+#ls2 = [ 12781, 24683,  2114,     0,     0,    0]
+#ls0 = [ 27811, 48762, 17237,     0,     0,    0]
+#ls1 = [ 48791, 28632, 37619,     0,     0,    0]
+#ls2 = [ 12787, 24686,  2114,     0,     0,    0]
+#      b0t0, b0t1, b1t0, b1t1, b2t0, b2t1
+ls3 = [   0,    0,    0,    0,    0,   0]
+
+#needs more tap masks...
+#14, 11, 9, 6, 5, 1
+tapA = 9521
+#13, 10, 8, 7, 3, 1
+tapB = 4805
+
+
+
+def make_plsm ( box0, box1, box2, taps ) :
+    plsm = {}
+    plsm['b0'] = array('i',box0)
+    plsm['b1'] = array('i',box1)
+    plsm['b2'] = array('i',box2)
+    plsm['taps'] = array('i',taps)
+    plsm['state'] = 0 #Modes will include test, DRNG,
+    plsm['mode'] = 0
+    plsm['lstate'] = 0 #Maximum state equals max of 2bytes or (1 << 16) -1
+    plsm['Mstate'] = 65535
+    plsm['tstate'] = 1024
+    plsm['bmask'] = 0
+    plsm['tmask'] = 0
+    plsm['rands'] = []
+    return plsm
+    
+
+
+def calc_state ( plsm, box_mask, tap_mask ) :
+    d = plsm #
+    if (box_mask == 0) and (d['state'] == 0) :
+        #first state, setup. Ignore tap_mask #box outputs first
+        b00 = d['b0'][2]
+        b10 = d['b1'][2]
+        b20 = d['b2'][2]
+        #box0
+        d['b0'][5] = ( d['b0'][0] + d['b0'][1] + d['b0'][2] ) % 65536
+        b01 = d['b0'][5]
+        d['b0'][2] = d['b0'][1]
+        d['b0'][1] = d['b0'][0]
+        d['b0'][0] = b10
+        #box1
+        d['b1'][5] = ( d['b1'][0] + d['b1'][1] + d['b1'][2] ) % 65536
+        b11 = d['b1'][5]
+        d['b1'][2] = d['b1'][1]
+        d['b1'][1] = d['b1'][0]
+        d['b1'][0] = b20
+        #box2
+        d['b2'][5] = ( d['b2'][0] + d['b2'][1] + d['b2'][2] ) % 65536
+        b21 = d['b2'][5]
+        d['b2'][2] = d['b2'][1]
+        d['b2'][1] = d['b2'][0]
+        d['b2'][0] = b00
+        #all boxes are at state 0, after output/input
+        #force state to state 1 by performing xorrs after moving outfb
+        d['b0'][3] = b21
+        d['b1'][3] = b01
+        d['b2'][3] = b11
+        #xorrs, after we recalculate inpfb
+        #box0
+        d['b0'][5] = ( d['b0'][0] + d['b0'][1] + d['b0'][2] ) % 65536
+        d['b0'][4] = d['b0'][3] ^ d['b0'][5]
+        #box1
+        d['b1'][5] = ( d['b1'][0] + d['b1'][1] + d['b1'][2] ) % 65536
+        d['b1'][4] = d['b1'][3] ^ d['b1'][5]
+        #box2
+        d['b2'][5] = ( d['b2'][0] + d['b2'][1] + d['b2'][2] ) % 65536
+        d['b2'][4] = d['b2'][3] ^ d['b2'][5]
+        #all registers are filled, and we are definitely @ state 1
+        #d['state'] = 1
+        #return d
+    if (box_mask >= 0) and (d['state'] == 1) :
+        #state0 complete. Need to continue mixing seeds
+        #box outputs
+        b00 = d['b0'][2]
+        b01 = d['b0'][5]
+        b10 = d['b1'][2]
+        b11 = d['b1'][5]
+        b20 = d['b2'][2]
+        b21 = d['b2'][5]
+        #box taps
+        t00 = d['b0'][1]
+        t01 = d['b0'][3]
+        t10 = d['b1'][1]
+        t11 = d['b1'][3]
+        t20 = d['b2'][1]
+        t21 = d['b2'][3]
+        #box0 box_mask == 1
+        d['b0'][2] = d['b0'][4]
+        d['b0'][1] = d['b0'][0]
+        d['b0'][0] = b20
+        d['b0'][3] = b11
+        d['b0'][5] = ( d['b0'][0] + d['b0'][1] + d['b0'][2] ) % 65536
+        d['b0'][4] = d['b0'][3] ^ d['b0'][5]
+        #box1 box_mask == 1
+        d['b1'][2] = d['b1'][4]
+        d['b1'][1] = d['b1'][0]
+        d['b1'][0] = b00
+        d['b1'][3] = b21
+        d['b1'][5] = ( d['b1'][0] + d['b1'][1] + d['b1'][2] ) % 65536
+        d['b1'][4] = d['b1'][3] ^ d['b1'][5]
+        #box2 box_mask == 1
+        d['b2'][2] = d['b2'][4]
+        d['b2'][1] = d['b2'][0]
+        d['b2'][0] = b10
+        d['b2'][3] = b01
+        d['b2'][5] = ( d['b2'][0] + d['b2'][1] + d['b2'][2] ) % 65536
+        d['b2'][4] = d['b2'][3] ^ d['b2'][5]
+        #registers updated and calculated for state 2
+        #d['state'] = d['state'] + 1
+        #state 2 is the first state with taps...
+        #tap_mask == 0
+        d['taps'][0] = tapA & t00
+        d['taps'][1] = tapB & t01
+        d['taps'][2] = tapA & t10
+        d['taps'][3] = tapB & t11
+        d['taps'][4] = tapA & t20
+        d['taps'][5] = tapB & t21
+        #all taps solved, all registers in place
+        #return d
+    if (d['state'] >= 2) and (box_mask == 0) :
+        #box outputs
+        b00 = d['b0'][2]
+        b01 = d['b0'][5]
+        b10 = d['b1'][2]
+        b11 = d['b1'][5]
+        b20 = d['b2'][2]
+        b21 = d['b2'][5]
+        #box taps
+        t00 = d['b0'][1]
+        t01 = d['b0'][3]
+        t10 = d['b1'][1]
+        t11 = d['b1'][3]
+        t20 = d['b2'][1]
+        t21 = d['b2'][3]
+        #box0 box_mask == 0
+        d['b0'][2] = d['b0'][4]
+        d['b0'][1] = d['b0'][0]
+        d['b0'][0] = b10
+        d['b0'][3] = b21
+        d['b0'][5] = ( d['b0'][0] + d['b0'][1] + d['b0'][2] ) % 65536
+        d['b0'][4] = d['b0'][3] ^ d['b0'][5]
+        #box1 box_mask == 0
+        d['b1'][2] = d['b1'][4]
+        d['b1'][1] = d['b1'][0]
+        d['b1'][0] = b20
+        d['b1'][3] = b01
+        d['b1'][5] = ( d['b1'][0] + d['b1'][1] + d['b1'][2] ) % 65536
+        d['b1'][4] = d['b1'][3] ^ d['b1'][5]
+        #box2 box_mask == 0
+        d['b2'][2] = d['b2'][4]
+        d['b2'][1] = d['b2'][0]
+        d['b2'][0] = b00
+        d['b2'][3] = b11
+        d['b2'][5] = ( d['b2'][0] + d['b2'][1] + d['b2'][2] ) % 65536
+        d['b2'][4] = d['b2'][3] ^ d['b2'][5]
+        #registers updates and calculated for state
+        #d['state'] = d['state'] + 1
+        if tap_mask == 0 :
+            #tap_mask == 0
+            d['taps'][0] = tapA & t00
+            d['taps'][1] = tapB & t01
+            d['taps'][2] = tapA & t10
+            d['taps'][3] = tapB & t11
+            d['taps'][4] = tapA & t20
+            d['taps'][5] = tapB & t21
+        else : #tap_mask == 1
+            d['taps'][0] = tapB & t00
+            d['taps'][1] = tapA & t01
+            d['taps'][2] = tapB & t10
+            d['taps'][3] = tapA & t11
+            d['taps'][4] = tapB & t20
+            d['taps'][5] = tapA & t21
+            #all taps moved, all registers in place
+        #return d
+    if (d['state'] >= 2) and (box_mask == 1) :
+        #box outputs
+        b00 = d['b0'][2]
+        b01 = d['b0'][5]
+        b10 = d['b1'][2]
+        b11 = d['b1'][5]
+        b20 = d['b2'][2]
+        b21 = d['b2'][5]
+        #box taps
+        t00 = d['b0'][1]
+        t01 = d['b0'][3]
+        t10 = d['b1'][1]
+        t11 = d['b1'][3]
+        t20 = d['b2'][1]
+        t21 = d['b2'][3]
+        #box0 box_mask == 1
+        d['b0'][2] = d['b0'][4]
+        d['b0'][1] = d['b0'][0]
+        d['b0'][0] = b20
+        d['b0'][3] = b11
+        d['b0'][5] = ( d['b0'][0] + d['b0'][1] + d['b0'][2] ) % 65536
+        d['b0'][4] = d['b0'][3] ^ d['b0'][5]
+        #box1 box_mask == 1
+        d['b1'][2] = d['b1'][4]
+        d['b1'][1] = d['b1'][0]
+        d['b1'][0] = b00
+        d['b1'][3] = b21
+        d['b1'][5] = ( d['b1'][0] + d['b1'][1] + d['b1'][2] ) % 65536
+        d['b1'][4] = d['b1'][3] ^ d['b1'][5]
+        #box2 box_mask == 1
+        d['b2'][2] = d['b2'][4]
+        d['b2'][1] = d['b2'][0]
+        d['b2'][0] = b10
+        d['b2'][3] = b01
+        d['b2'][5] = ( d['b2'][0] + d['b2'][1] + d['b2'][2] ) % 65536
+        d['b2'][4] = d['b2'][3] ^ d['b2'][5]
+        #registers updated and calculated for state
+        #d['state'] = d['state'] + 1
+        if tap_mask == 0 :
+            #tap_mask == 0
+            d['taps'][0] = tapA & t00
+            d['taps'][1] = tapB & t01
+            d['taps'][2] = tapA & t10
+            d['taps'][3] = tapB & t11
+            d['taps'][4] = tapA & t20
+            d['taps'][5] = tapB & t21
+        else : #tap_mask == 1
+            d['taps'][0] = tapB & t00
+            d['taps'][1] = tapA & t01
+            d['taps'][2] = tapB & t10
+            d['taps'][3] = tapA & t11
+            d['taps'][4] = tapB & t20
+            d['taps'][5] = tapA & t21
+            #all taps moved, all registers in place
+            #return d
+
+
+
+def solve_taps ( plsm ) :
+    d = plsm
+    if d['tmask'] == 0 :
+        bm = ((d['taps'][0] & (1<<13))>>13) ^ ((d['taps'][3] & (1<<12))>>12)
+        tm = ((d['taps'][2] & (1<<13))>>13) ^ ((d['taps'][5] & (1<<12))>>12)
+        b0 = ((d['taps'][0] & (1<<10))>>3) | ((d['taps'][1] & (1<<12))>>6) |\
+        ((d['taps'][1] & (1<<9))>>4) | ((d['taps'][0] & (1<<8))>>4) |\
+        ((d['taps'][1] & (1<<2))<<1) | ((d['taps'][0] & (1<<5))>>3) |\
+        ((d['taps'][0] & (1<<4))>>3) | ((d['taps'][1] & 1))
+        b1 = ((d['taps'][2] & (1<<10))>>3) | ((d['taps'][1] & (1<<7))>>1) |\
+        ((d['taps'][2] & (1<<8))>>3) | ((d['taps'][3] & (1<<9))>>5) |\
+        ((d['taps'][3] & (1<<6))>>3) | ((d['taps'][2] & (1<<4))>>2) |\
+        ((d['taps'][4] & (1<<4))>>3) | ((d['taps'][0] & 1))
+        b2 = ((d['taps'][4] & (1<<13))>>6) | ((d['taps'][5] & (1<<9))>>3) |\
+        ((d['taps'][5] & (1<<7))>>2) | ((d['taps'][4] & (1<<10))>>6) |\
+        ((d['taps'][5] & (1<<6))>>3) | ((d['taps'][4] & (1<<8))>>6) |\
+        ((d['taps'][4] & (1<<5))>>4) | ((d['taps'][5] & 1))
+        b3 = ((d['taps'][3] & (1<<7))) | ((d['taps'][1] & (1<<6))) |\
+        ((d['taps'][2] & (1<<5))) | ((d['taps'][3] & (1<<2))<<2) |\
+        ((d['taps'][2] & 1)<<3) | ((d['taps'][3] & 1)<<2) |\
+        ((d['taps'][5] & (1<<2))>>1) | ((d['taps'][4] & 1))
+        #now xor b0,b1 & b2,b3 for 2 byte random
+        r0 = b0 ^ b1
+        r1 = b2 ^ b3
+        r2 = (r0<<8) | r1
+        #append it and modify box/tap masks
+        d['rands'].append(r2)
+        d['bmask'] = bm
+        d['tmask'] = tm
+    else : #tmask = 1
+        bm = ((d['taps'][1] & (1<<13))>>13) ^ ((d['taps'][2] & (1<<12))>>12)
+        tm = ((d['taps'][3] & (1<<13))>>13) ^ ((d['taps'][4] & (1<<12))>>12)
+        b0 = ((d['taps'][1] & (1<<10))>>3) | ((d['taps'][0] & (1<<12))>>6) |\
+        ((d['taps'][0] & (1<<9))>>4) | ((d['taps'][1] & (1<<8))>>4) |\
+        ((d['taps'][0] & (1<<2))<<1) | ((d['taps'][1] & (1<<5))>>3) |\
+        ((d['taps'][1] & (1<<4))>>3) | ((d['taps'][0] & 1))
+        b1 = ((d['taps'][3] & (1<<10))>>3) | ((d['taps'][0] & (1<<7))>>1) |\
+        ((d['taps'][3] & (1<<8))>>3) | ((d['taps'][2] & (1<<9))>>5) |\
+        ((d['taps'][2] & (1<<6))>>3) | ((d['taps'][3] & (1<<4))>>2) |\
+        ((d['taps'][5] & (1<<4))>>3) | ((d['taps'][1] & 1))
+        b2 = ((d['taps'][5] & (1<<13))>>6) | ((d['taps'][4] & (1<<9))>>3) |\
+        ((d['taps'][4] & (1<<7))>>2) | ((d['taps'][5] & (1<<10))>>6) |\
+        ((d['taps'][4] & (1<<6))>>3) | ((d['taps'][5] & (1<<8))>>6) |\
+        ((d['taps'][5] & (1<<5))>>4) | ((d['taps'][4] & 1))
+        b3 = ((d['taps'][2] & (1<<7))) | ((d['taps'][0] & (1<<6))) |\
+        ((d['taps'][3] & (1<<5))) | ((d['taps'][2] & (1<<2))<<2) |\
+        ((d['taps'][3] & 1)<<3) | ((d['taps'][2] & 1)<<2) |\
+        ((d['taps'][4] & (1<<2))>>1) | ((d['taps'][5] & 1))
+        #now xor b0,b2 & b1,b3 for 2 byte random
+        r0 = b0 ^ b2
+        r1 = b1 ^ b3
+        r2 = (r0<<8) | r1
+        #append it and modify box/tap masks
+        d['rands'].append(r2)
+        d['bmask'] = bm
+        d['tmask'] = tm
+    #return d
+        
+
+
+
+def update_state ( plsm ) :
+    d = plsm
+    d['lstate'] = d['state']
+    d['state'] = d['state'] + 1
+    
+    
+    
+def goto_state ( plsm, tstate ) :
+    d = plsm
+    d['tstate'] = tstate
+    for i in range(0, tstate):
+        calc_state(d,d['bmask'],d['tmask'])
+        solve_taps(d)
+        update_state(d)
+    r = {}
+    for n in d['rands'] :
+        r[n] = 0
+    for a in d['rands'] :
+        r[a] = r[a] + 1
+    print("State: ", d['state'], "Last State: ", d['lstate'], "Mode: ", d['mode'])
+    print("Target State: ", d['tstate'], "Max. State: ", d['Mstate'])
+    print("Box Mask: ", d['bmask'], "Tap Mask: ", d['tmask'], "Taps: ", d['taps'])
+    print("Box 0: ", d['b0'])
+    print("Box 1: ", d['b1'])
+    print("Box 2: ", d['b2'])
+    #print("Rands: ", r)
+    return r
+
+
+if __name__ == '__main__':
+    p0 = make_plsm(ls0,ls1,ls2,ls3)
+    r0 = goto_state(p0,1000000)
+    twos, threes, fours, fives, bigs = [],[],[],[],[]
+    for i in r0:
+        if r0[i] > 5:
+            bigs.append(i)
+        elif r0[i] == 5:
+            fives.append(i)
+        elif r0[i] == 4:
+            fours.append(i)
+        elif r0[i] == 3:
+            threes.append(i)
+        elif r0[i] == 2:
+            twos.append(i)
+    print("Bigs: ", len(bigs), "Fives: ", len(fives))
+    print("Fours: ", len(fours), "Threes: ", len(threes))
+    print("Twos: ", len(twos))
+    
+    #
